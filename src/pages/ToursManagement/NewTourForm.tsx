@@ -74,6 +74,8 @@ interface TourFormData {
   long_description: string;
   hero_image_path: string;
   tour_type_id: string;
+  base_date_start: string;
+  base_date_end: string;
   // Diğer gerekli alanlar
 }
 
@@ -98,7 +100,9 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
     short_description: tour?.short_description || '',
     long_description: tour?.long_description || '',
     hero_image_path: tour?.hero_image_path || '',
-    tour_type_id: tour?.tour_type_id || ''
+    tour_type_id: tour?.tour_type_id || '',
+    base_date_start: tour?.base_date_start ? new Date(tour.base_date_start).toISOString().split('T')[0] : '',
+    base_date_end: tour?.base_date_end ? new Date(tour.base_date_end).toISOString().split('T')[0] : '',
   });
 
   // İlişkili veriler için state'ler
@@ -150,7 +154,9 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
         short_description: tour?.short_description || '',
         long_description: tour?.long_description || '',
         hero_image_path: tour?.hero_image_path || '',
-        tour_type_id: tour?.tour_type_id || ''
+        tour_type_id: tour?.tour_type_id || '',
+        base_date_start: tour?.base_date_start ? new Date(tour.base_date_start).toISOString().split('T')[0] : '',
+        base_date_end: tour?.base_date_end ? new Date(tour.base_date_end).toISOString().split('T')[0] : '',
       });
 
       // Önemli noktaları yükle
@@ -463,6 +469,43 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
         if (pricesError) throw pricesError;
       }
 
+      // BURADA HAVA DURUMU VERİLERİNİ KAYDET
+      if (isEditMode) {
+        // Önce mevcut hava durumu verilerini sil
+        const { error: deleteWeatherError } = await supabase
+          .from('tour_weather_data')
+          .delete()
+          .eq('tour_id', tourId);
+
+        if (deleteWeatherError) throw deleteWeatherError;
+      }
+
+      // Sadece değer girilmiş ayları filtrele ve kaydet
+      const validWeatherData = weatherData.filter(
+        data => data.month && (data.temperature !== undefined || data.rainfall !== undefined || data.is_best_period)
+      );
+
+      if (validWeatherData.length > 0) {
+        // Hava durumu verilerini hazırla
+        const processedWeatherData = validWeatherData.map(data => ({
+          tour_id: tourId,
+          month: data.month || '',
+          temperature: Number(data.temperature) || 0,
+          rainfall: Number(data.rainfall) || 0,
+          is_best_period: data.is_best_period || false,
+          created_at: new Date().toISOString()
+        }));
+
+        // Hava durumu verilerini kaydet
+        const { error: weatherError } = await supabase
+          .from('tour_weather_data')
+          .insert(processedWeatherData);
+
+        if (weatherError) throw weatherError;
+      }
+
+      // HAVA DURUMU VERİLERİ KAYDETME SONU
+
       // Başarılı sonuç
       onSuccess();
       onClose();
@@ -659,6 +702,38 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
                             <option value="TRY">TRY</option>
                           </select>
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      <label htmlFor="base_date_start" className="block text-sm font-medium text-gray-700">
+                        Tur Başlangıç Tarihi
+                      </label>
+                      <div className="mt-1">
+                        <input
+                          type="date"
+                          name="base_date_start"
+                          id="base_date_start"
+                          value={formData.base_date_start}
+                          onChange={handleInputChange}
+                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      <label htmlFor="base_date_end" className="block text-sm font-medium text-gray-700">
+                        Tur Bitiş Tarihi
+                      </label>
+                      <div className="mt-1">
+                        <input
+                          type="date"
+                          name="base_date_end"
+                          id="base_date_end"
+                          value={formData.base_date_end}
+                          onChange={handleInputChange}
+                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        />
                       </div>
                     </div>
 

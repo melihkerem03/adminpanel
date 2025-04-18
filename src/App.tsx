@@ -11,6 +11,8 @@ import OpportunityManagement from './pages/OpportunityManagement';
 import ServicesManagement from './pages/ServicesManagement';
 import ToursManagement from './pages/ToursManagement';
 import TourTypeManagement from './pages/TourTypeManagement';
+import Users from './pages/Users';
+import Layout from './components/Layout';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -56,7 +58,7 @@ function App() {
           <Route path="/services-management" element={<ServicesManagement />} />
           <Route path="/tours-management" element={<ToursManagement />} />
           <Route path="/tour-type-management" element={<TourTypeManagement />} />
-          <Route path="/users" element={<div className="p-6"><h1 className="text-2xl font-bold">Kullanıcılar</h1></div>} />
+          <Route path="/users" element={<Users />} />
           <Route path="/statistics" element={<div className="p-6"><h1 className="text-2xl font-bold">İstatistikler</h1></div>} />
           <Route path="/settings" element={<div className="p-6"><h1 className="text-2xl font-bold">Ayarlar</h1></div>} />
         </Route>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { LogOut, Home, Users, Settings, BarChart2, Calendar, FileText, Bell } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -20,10 +21,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 <Home className="w-5 h-5 mr-3" />
                 Ana Sayfa
               </a>
-              <a href="#" className="flex items-center px-4 py-2 text-sm font-medium text-gray-300 rounded-md hover:bg-gray-700 hover:text-white">
+              <Link to="/users" className="flex items-center px-4 py-2 text-sm font-medium text-gray-300 rounded-md hover:bg-gray-700 hover:text-white">
                 <Users className="w-5 h-5 mr-3" />
                 Kullanıcılar
-              </a>
+              </Link>
               <a href="#" className="flex items-center px-4 py-2 text-sm font-medium text-gray-300 rounded-md hover:bg-gray-700 hover:text-white">
                 <FileText className="w-5 h-5 mr-3" />
                 Raporlar
