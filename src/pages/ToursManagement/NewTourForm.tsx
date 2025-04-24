@@ -396,14 +396,27 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
     setIsSubmitting(true);
 
     try {
-      // Form verilerini kontrol et
+      // Form verilerini kontrol et - region kontrolü ekleyelim
       if (!formData.title || !formData.region || !formData.duration) {
-        throw new Error('Lütfen tüm zorunlu alanları doldurun');
+        // Eksik alan varsa hemen hata ver
+        const missingFields = [];
+        if (!formData.title) missingFields.push('Başlık');
+        if (!formData.region) missingFields.push('Bölge');
+        if (!formData.duration) missingFields.push('Süre');
+        
+        throw new Error(`Lütfen tüm zorunlu alanları doldurun: ${missingFields.join(', ')}`);
+      }
+
+      // region değerinin boş olmadığından emin olalım
+      if (formData.region.trim() === '') {
+        throw new Error('Bölge alanı boş olamaz');
       }
 
       let tourId = tour?.id;
       let tourData = {
         ...formData,
+        // Boş string yerine varsayılan değer atayalım
+        region: formData.region.trim() || 'Belirtilmemiş',
         base_price: Number(formData.base_price) || 0,
         updated_at: new Date().toISOString()
       };
