@@ -73,11 +73,17 @@ interface TourFormData {
   short_description: string;
   long_description: string;
   hero_image_path: string;
+  tours_map_image: string;
+  tours_image_1: string;
+  tours_image_2: string;
+  tours_image_3: string;
   tour_type_id: string;
   base_date_start: string;
   base_date_end: string;
   // Diğer gerekli alanlar
 }
+
+const STORAGE_BUCKET = 'tour-images';
 
 const NewTourForm: React.FC<NewTourFormProps> = ({
   onClose,
@@ -100,6 +106,10 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
     short_description: tour?.short_description || '',
     long_description: tour?.long_description || '',
     hero_image_path: tour?.hero_image_path || '',
+    tours_map_image: tour?.tours_map_image || '',
+    tours_image_1: tour?.tours_image_1 || '',
+    tours_image_2: tour?.tours_image_2 || '',
+    tours_image_3: tour?.tours_image_3 || '',
     tour_type_id: tour?.tour_type_id || '',
     base_date_start: tour?.base_date_start ? new Date(tour.base_date_start).toISOString().split('T')[0] : '',
     base_date_end: tour?.base_date_end ? new Date(tour.base_date_end).toISOString().split('T')[0] : '',
@@ -154,6 +164,10 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
         short_description: tour?.short_description || '',
         long_description: tour?.long_description || '',
         hero_image_path: tour?.hero_image_path || '',
+        tours_map_image: tour?.tours_map_image || '',
+        tours_image_1: tour?.tours_image_1 || '',
+        tours_image_2: tour?.tours_image_2 || '',
+        tours_image_3: tour?.tours_image_3 || '',
         tour_type_id: tour?.tour_type_id || '',
         base_date_start: tour?.base_date_start ? new Date(tour.base_date_start).toISOString().split('T')[0] : '',
         base_date_end: tour?.base_date_end ? new Date(tour.base_date_end).toISOString().split('T')[0] : '',
@@ -275,20 +289,37 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
   };
 
   // Görsel yükleme ve yönetim fonksiyonları
-  const uploadImage = async (file: File, type: 'hero' | 'gallery' | 'map'): Promise<string> => {
+  const uploadMedia = async (file: File, type: 'hero' | 'gallery' | 'map'): Promise<{fileName: string, filePath: string}> => {
     try {
-      const fileExt = file.name.split('.').pop();
+      // Dosya boyutunu kontrol et
+      if (file.size > 10 * 1024 * 1024) { // 10MB
+        throw new Error('Dosya boyutu çok büyük (maksimum 10MB)');
+      }
+      
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      if (!fileExt || !['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {
+        throw new Error('Geçersiz dosya türü. Sadece jpg, jpeg, png, gif ve webp kabul edilir.');
+      }
+      
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `${type}/${fileName}`;
 
+      console.log(`Uploading ${type} image:`, file.name, "to path:", filePath);
+
       const { error: uploadError, data } = await supabase.storage
-        .from('site-images')
-        .upload(`tour-images/${filePath}`, file);
+        .from(STORAGE_BUCKET)
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true,
+        });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        throw uploadError;
+      }
 
-      console.log('Upload successful:', filePath);
-      return `tour-images/${filePath}`;
+      console.log('Upload successful:', filePath, 'Full data:', data);
+      return { fileName, filePath };
     } catch (error) {
       console.error('Error uploading image:', error);
       throw error;
@@ -297,25 +328,25 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
 
   const handleImageUpload = async (file: File, type: 'hero' | 'gallery' | 'map') => {
     try {
-      const storagePath = await uploadImage(file, type);
+      const { filePath } = await uploadMedia(file, type);
 
       // Hero görsel için form datasını güncelle
       if (type === 'hero') {
         setFormData(prev => ({
           ...prev,
-          hero_image_path: storagePath
+          hero_image_path: filePath
         }));
       } else {
         // Galeri veya harita görseli için images state'ini güncelle
         setImages(prev => [...prev, {
-          storage_path: storagePath,
+          storage_path: filePath,
           image_type: type,
           alt_text: file.name,
           display_order: prev.length + 1
         }]);
       }
 
-      console.log(`${type} image uploaded successfully:`, storagePath);
+      console.log(`${type} image uploaded successfully:`, filePath);
     } catch (error) {
       console.error('Error handling image upload:', error);
       alert('Görsel yüklenirken bir hata oluştu');
@@ -361,12 +392,32 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
   };
 
   // Görsel URL'lerini alma yardımcı fonksiyonu
-  const getImageUrl = (path: string): string => {
-    if (!path) return '';
-    return supabase.storage
-      .from('site-images')
-      .getPublicUrl(path)
-      .data.publicUrl;
+  const getMediaUrl = (path: string): string => {
+    if (!path) {
+      console.log("Empty path provided to getMediaUrl");
+      return '';
+    }
+    
+    try {
+      // Path'i temizle
+      const cleanPath = path.replace(/^tour-images\//, '');
+      
+      console.log("Getting URL for path:", cleanPath);
+      const { data } = supabase.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(cleanPath);
+      
+      if (!data || !data.publicUrl) {
+        console.error("Failed to get public URL for:", cleanPath);
+        return '';
+      }
+      
+      console.log("Generated public URL:", data.publicUrl);
+      return data.publicUrl;
+    } catch (error) {
+      console.error("Error generating URL:", error, "for path:", path);
+      return '';
+    }
   };
 
   // Para birimi değişikliği için yardımcı fonksiyon
@@ -390,36 +441,205 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
     setDatesPrices(newDatesPrices);
   };
 
+  // 1. Öne çıkanları kaydetme fonksiyonu
+  const saveHighlights = async (tourId: string) => {
+    try {
+      console.log("Highlights kaydediliyor...", highlights);
+      
+      // Mevcut highlights silme
+      const { error: deleteError } = await supabase
+        .from('tour_highlights')
+        .delete()
+        .eq('tour_id', tourId);
+      
+      if (deleteError) {
+        console.error("Mevcut highlights silinirken hata:", deleteError);
+      }
+      
+      // Yeni highlights ekleme
+      if (highlights.length > 0) {
+        const highlightsToInsert = highlights.map((item, index) => ({
+          tour_id: tourId,
+          content: item.content || '',
+          display_order: index + 1
+        }));
+        
+        console.log("Eklenecek highlights:", highlightsToInsert);
+        
+        const { data: insertedHighlights, error: insertError } = await supabase
+          .from('tour_highlights')
+          .insert(highlightsToInsert)
+          .select();
+        
+        if (insertError) {
+          console.error("Highlights kaydedilirken hata:", insertError);
+          throw insertError;
+        }
+        
+        console.log("Kaydedilen highlights:", insertedHighlights);
+      }
+      return true;
+    } catch (error) {
+      console.error("Highlights kaydetme hatası:", error);
+      throw error;
+    }
+  };
+
+  // 2. Dahil olanları kaydetme fonksiyonu
+  const saveInclusions = async (tourId: string) => {
+    try {
+      console.log("Inclusions kaydediliyor...", inclusions);
+      
+      // Mevcut inclusions silme
+      const { error: deleteError } = await supabase
+        .from('tour_inclusions')
+        .delete()
+        .eq('tour_id', tourId);
+      
+      if (deleteError) {
+        console.error("Mevcut inclusions silinirken hata:", deleteError);
+      }
+      
+      // Yeni inclusions ekleme
+      if (inclusions.length > 0) {
+        const inclusionsToInsert = inclusions.map((item, index) => ({
+          tour_id: tourId,
+          content: item.content || '',
+          display_order: index + 1
+        }));
+        
+        console.log("Eklenecek inclusions:", inclusionsToInsert);
+        
+        const { data: insertedInclusions, error: insertError } = await supabase
+          .from('tour_inclusions')
+          .insert(inclusionsToInsert)
+          .select();
+        
+        if (insertError) {
+          console.error("Inclusions kaydedilirken hata:", insertError);
+          throw insertError;
+        }
+        
+        console.log("Kaydedilen inclusions:", insertedInclusions);
+      }
+      return true;
+    } catch (error) {
+      console.error("Inclusions kaydetme hatası:", error);
+      throw error;
+    }
+  };
+
+  // 3. İpuçlarını kaydetme fonksiyonu
+  const saveTips = async (tourId: string) => {
+    try {
+      console.log("Tips kaydediliyor...", tips);
+      
+      // Mevcut tips silme
+      const { error: deleteError } = await supabase
+        .from('tour_tips')
+        .delete()
+        .eq('tour_id', tourId);
+      
+      if (deleteError) {
+        console.error("Mevcut tips silinirken hata:", deleteError);
+      }
+      
+      // Yeni tips ekleme
+      if (tips.length > 0) {
+        const tipsToInsert = tips.map(tip => ({
+          tour_id: tourId,
+          content: tip.content || '',
+          icon_name: tip.icon_name || 'map-pin'
+        }));
+        
+        console.log("Eklenecek tips:", tipsToInsert);
+        
+        const { data: insertedTips, error: insertError } = await supabase
+          .from('tour_tips')
+          .insert(tipsToInsert)
+          .select();
+        
+        if (insertError) {
+          console.error("Tips kaydedilirken hata:", insertError);
+          throw insertError;
+        }
+        
+        console.log("Kaydedilen tips:", insertedTips);
+      }
+      return true;
+    } catch (error) {
+      console.error("Tips kaydetme hatası:", error);
+      throw error;
+    }
+  };
+
+  // Program verilerini kaydetme fonksiyonu
+  const saveDailyPrograms = async (tourId: string) => {
+    try {
+      console.log("Günlük programlar kaydediliyor...", dailyPrograms);
+      
+      // 1. Mevcut programları silme
+      const { error: deleteError } = await supabase
+        .from('tour_daily_programs')
+        .delete()
+        .eq('tour_id', tourId);
+      
+      if (deleteError) {
+        console.error("Mevcut programlar silinirken hata:", deleteError);
+      }
+      
+      // 2. Yeni programları ekleme
+      if (dailyPrograms.length > 0) {
+        const programsToInsert = dailyPrograms.map(program => ({
+          tour_id: tourId,
+          title: program.title || '',
+          description: program.description || '',
+          day_range: program.day_range || ''
+        }));
+        
+        console.log("Eklenecek programlar:", programsToInsert);
+        
+        const { data: insertedPrograms, error: insertError } = await supabase
+          .from('tour_daily_programs')
+          .insert(programsToInsert)
+          .select();
+        
+        if (insertError) {
+          console.error("Programlar kaydedilirken hata:", insertError);
+          throw insertError;
+        }
+        
+        console.log("Kaydedilen programlar:", insertedPrograms);
+      }
+      return true;
+    } catch (error) {
+      console.error("Programlar kaydetme hatası:", error);
+      throw error;
+    }
+  };
+
   // Form gönderme işlemi
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     try {
-      // Form verilerini kontrol et - region kontrolü ekleyelim
+      // Form verilerini kontrol et
       if (!formData.title || !formData.region || !formData.duration) {
-        // Eksik alan varsa hemen hata ver
-        const missingFields = [];
-        if (!formData.title) missingFields.push('Başlık');
-        if (!formData.region) missingFields.push('Bölge');
-        if (!formData.duration) missingFields.push('Süre');
-        
-        throw new Error(`Lütfen tüm zorunlu alanları doldurun: ${missingFields.join(', ')}`);
-      }
-
-      // region değerinin boş olmadığından emin olalım
-      if (formData.region.trim() === '') {
-        throw new Error('Bölge alanı boş olamaz');
+        throw new Error('Lütfen tüm zorunlu alanları doldurun');
       }
 
       let tourId = tour?.id;
+      // Görselleri kontrol edip verileri hazırla
+      console.log("Form data before submission:", formData);
+      
       let tourData = {
         ...formData,
-        // Boş string yerine varsayılan değer atayalım
-        region: formData.region.trim() || 'Belirtilmemiş',
         base_price: Number(formData.base_price) || 0,
         updated_at: new Date().toISOString()
       };
+
+      console.log("Kaydedilecek veri:", tourData);
 
       // Tur güncelleme veya oluşturma
       if (isEditMode && tourId) {
@@ -431,10 +651,17 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
           .select()
           .single();
 
-        if (updateError) throw updateError;
-        if (!updatedTour) throw new Error('Tour update failed');
+        if (updateError) {
+          console.error("Tur güncelleme hatası:", updateError);
+          throw updateError;
+        }
+        
+        if (!updatedTour) {
+          throw new Error('Tour update failed');
+        }
         
         tourId = updatedTour.id;
+        console.log("Tur güncellendi:", updatedTour);
       } else {
         // Yeni tur oluştur
         const { data: newTour, error: createError } = await supabase
@@ -446,10 +673,17 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
           .select()
           .single();
 
-        if (createError) throw createError;
-        if (!newTour) throw new Error('Tour creation failed');
+        if (createError) {
+          console.error("Tur oluşturma hatası:", createError);
+          throw createError;
+        }
+        
+        if (!newTour) {
+          throw new Error('Tour creation failed');
+        }
         
         tourId = newTour.id;
+        console.log("Yeni tur oluşturuldu:", newTour);
       }
 
       // Tarih ve fiyatları kaydet
@@ -522,6 +756,30 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
       // Başarılı sonuç
       onSuccess();
       onClose();
+      alert('Tur başarıyla kaydedildi!');
+
+      // İsterseniz diğer ilişkili verileri de benzer şekilde kaydedebilirsiniz
+      if (tourId) {
+        try {
+          // Tüm ilişkili verileri sırayla kaydet
+          await saveHighlights(tourId);
+          console.log("Highlights başarıyla kaydedildi");
+          
+          await saveInclusions(tourId);
+          console.log("Inclusions başarıyla kaydedildi");
+          
+          await saveTips(tourId);
+          console.log("Tips başarıyla kaydedildi");
+          
+          // Günlük programları da zaten eklemiştiniz, onları da burada çağırabilirsiniz
+          await saveDailyPrograms(tourId);
+          console.log("Günlük programlar başarıyla kaydedildi");
+          
+        } catch (error) {
+          console.error("İlişkili veriler kaydedilirken hata:", error);
+          // Ana işlemi durdurmayalım, sadece hata logları
+        }
+      }
     } catch (error) {
       console.error('Error saving tour:', error);
       alert(`Tur kaydedilirken bir hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
@@ -552,6 +810,104 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
       };
       return updated;
     });
+  };
+
+  // Harita görseli yükleme işleyicisi
+  const handleMapImageUpload = async (file: File) => {
+    try {
+      const { filePath } = await uploadMedia(file, 'map');
+      
+      console.log("Map image uploaded successfully:", filePath);
+      
+      setFormData(prev => ({
+        ...prev,
+        tours_map_image: filePath
+      }));
+    } catch (error) {
+      console.error('Error uploading map image:', error);
+      alert('Harita görseli yüklenirken bir hata oluştu');
+    }
+  };
+
+  // Harita görseli silme işleyicisi
+  const handleMapImageDelete = () => {
+    try {
+      const imagePath = formData.tours_map_image;
+      
+      if (imagePath) {
+        console.log("Deleting map image:", imagePath);
+        
+        // Storage'dan görsel silme işlemi
+        supabase.storage
+          .from(STORAGE_BUCKET)
+          .remove([imagePath])
+          .then(response => {
+            if (response.error) {
+              console.error("Error removing map image from storage:", response.error);
+            } else {
+              console.log("Map image removed from storage successfully");
+            }
+          });
+        
+        // Form state'ini güncelle
+        setFormData(prev => ({
+          ...prev,
+          tours_map_image: ''
+        }));
+      }
+    } catch (error) {
+      console.error('Error deleting map image:', error);
+      alert('Harita görseli silinirken bir hata oluştu');
+    }
+  };
+
+  // Galeri görseli yükleme işleyicisi
+  const handleGalleryImageUpload = async (file: File, index: 1 | 2 | 3) => {
+    try {
+      const { filePath } = await uploadMedia(file, 'gallery');
+      
+      console.log(`Gallery image ${index} uploaded successfully:`, filePath);
+      
+      setFormData(prev => ({
+        ...prev,
+        [`tours_image_${index}`]: filePath
+      }));
+    } catch (error) {
+      console.error(`Error uploading gallery image ${index}:`, error);
+      alert('Galeri görseli yüklenirken bir hata oluştu');
+    }
+  };
+
+  // Galeri görseli silme işleyicisi
+  const handleGalleryImageDelete = (index: 1 | 2 | 3) => {
+    try {
+      const imagePath = formData[`tours_image_${index}`];
+      
+      if (imagePath) {
+        console.log(`Deleting gallery image ${index}:`, imagePath);
+        
+        // Storage'dan görsel silme işlemi
+        supabase.storage
+          .from(STORAGE_BUCKET)
+          .remove([imagePath])
+          .then(response => {
+            if (response.error) {
+              console.error(`Error removing gallery image ${index} from storage:`, response.error);
+            } else {
+              console.log(`Gallery image ${index} removed from storage successfully`);
+            }
+          });
+        
+        // Form state'ini güncelle
+        setFormData(prev => ({
+          ...prev,
+          [`tours_image_${index}`]: ''
+        }));
+      }
+    } catch (error) {
+      console.error(`Error deleting gallery image ${index}:`, error);
+      alert('Görsel silinirken bir hata oluştu');
+    }
   };
 
   return (
@@ -816,7 +1172,7 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
                         {formData.hero_image_path ? (
                           <div className="relative w-full h-full">
                             <img
-                              src={getImageUrl(formData.hero_image_path)}
+                              src={getMediaUrl(formData.hero_image_path)}
                               alt="Hero görsel"
                               className="w-full h-full object-cover"
                             />
@@ -864,16 +1220,21 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
                     <h3 className="text-lg font-medium text-gray-900 mb-4">Harita Görseli</h3>
                     <div className="flex items-start space-x-4">
                       <div className="flex-shrink-0 w-40 h-40 border rounded-lg overflow-hidden bg-gray-100">
-                        {images.find(img => img.image_type === 'map')?.storage_path ? (
+                        {formData.tours_map_image ? (
                           <div className="relative w-full h-full">
                             <img
-                              src={getImageUrl(images.find(img => img.image_type === 'map')?.storage_path || '')}
+                              src={getMediaUrl(formData.tours_map_image)}
                               alt="Harita"
                               className="w-full h-full object-cover"
+                              onError={(e) => {
+                                console.error("Map image failed to load");
+                                e.currentTarget.src = "";
+                                e.currentTarget.alt = "Görüntülenemiyor";
+                              }}
                             />
                             <button
                               type="button"
-                              onClick={() => handleImageDelete(images.find(img => img.image_type === 'map')?.id || '', 'map')}
+                              onClick={handleMapImageDelete}
                               className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -893,7 +1254,7 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
                           accept="image/*"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file) handleImageUpload(file, 'map');
+                            if (file) handleMapImageUpload(file);
                           }}
                         />
                         <label
@@ -910,45 +1271,131 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
                   {/* Galeri Görselleri */}
                   <div>
                     <h3 className="text-lg font-medium text-gray-900 mb-4">Galeri Görselleri</h3>
-                    <div className="grid grid-cols-3 gap-4">
-                      {images.filter(img => img.image_type === 'gallery').map((image, index) => (
-                        <div key={image.id || index} className="relative">
-                          <img
-                            src={getImageUrl(image.storage_path || '')}
-                            alt={image.alt_text || ''}
-                            className="w-full h-32 object-cover rounded-lg"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleImageDelete(image.id || '', 'gallery')}
-                            className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {/* Galeri Görseli 1 */}
+                      <div className="relative">
+                        {formData.tours_image_1 ? (
+                          <>
+                            <img
+                              src={getMediaUrl(formData.tours_image_1)}
+                              alt="Galeri görseli 1"
+                              className="w-full h-32 object-cover rounded-lg"
+                              onError={(e) => {
+                                console.error("Gallery image 1 failed to load");
+                                e.currentTarget.src = "";
+                                e.currentTarget.alt = "Görüntülenemiyor";
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleGalleryImageDelete(1)}
+                              className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <label
+                            htmlFor="gallery-image-1"
+                            className="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer"
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                      
-                      {/* Yeni galeri görseli ekleme butonu */}
-                      <div>
+                            <Plus className="w-8 h-8 text-gray-400" />
+                          </label>
+                        )}
                         <input
                           type="file"
-                          id="gallery-image"
+                          id="gallery-image-1"
                           className="hidden"
                           accept="image/*"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file) {
-                              console.log('Selected file:', file.name);
-                              handleImageUpload(file, 'gallery');
-                            }
+                            if (file) handleGalleryImageUpload(file, 1);
                           }}
                         />
-                        <label
-                          htmlFor="gallery-image"
-                          className="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer"
-                        >
-                          <Plus className="w-8 h-8 text-gray-400" />
-                        </label>
+                      </div>
+
+                      {/* Galeri Görseli 2 */}
+                      <div className="relative">
+                        {formData.tours_image_2 ? (
+                          <>
+                            <img
+                              src={getMediaUrl(formData.tours_image_2)}
+                              alt="Galeri görseli 2"
+                              className="w-full h-32 object-cover rounded-lg"
+                              onError={(e) => {
+                                console.error("Gallery image 2 failed to load");
+                                e.currentTarget.src = "";
+                                e.currentTarget.alt = "Görüntülenemiyor";
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleGalleryImageDelete(2)}
+                              className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <label
+                            htmlFor="gallery-image-2"
+                            className="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer"
+                          >
+                            <Plus className="w-8 h-8 text-gray-400" />
+                          </label>
+                        )}
+                        <input
+                          type="file"
+                          id="gallery-image-2"
+                          className="hidden"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleGalleryImageUpload(file, 2);
+                          }}
+                        />
+                      </div>
+
+                      {/* Galeri Görseli 3 */}
+                      <div className="relative">
+                        {formData.tours_image_3 ? (
+                          <>
+                            <img
+                              src={getMediaUrl(formData.tours_image_3)}
+                              alt="Galeri görseli 3"
+                              className="w-full h-32 object-cover rounded-lg"
+                              onError={(e) => {
+                                console.error("Gallery image 3 failed to load");
+                                e.currentTarget.src = "";
+                                e.currentTarget.alt = "Görüntülenemiyor";
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleGalleryImageDelete(3)}
+                              className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <label
+                            htmlFor="gallery-image-3"
+                            className="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer"
+                          >
+                            <Plus className="w-8 h-8 text-gray-400" />
+                          </label>
+                        )}
+                        <input
+                          type="file"
+                          id="gallery-image-3"
+                          className="hidden"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleGalleryImageUpload(file, 3);
+                          }}
+                        />
                       </div>
                     </div>
                   </div>
@@ -1218,7 +1665,7 @@ const NewTourForm: React.FC<NewTourFormProps> = ({
                     <button
                       type="button"
                       onClick={handleAddDailyProgram}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm"
                     >
                       <Plus className="w-5 h-5 mr-2" />
                       Yeni Gün Ekle
