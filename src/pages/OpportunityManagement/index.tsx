@@ -94,18 +94,54 @@ const OpportunityManagement = () => {
 
     try {
       setIsLoading(true);
-      const { error } = await supabase
+      
+      console.log("Kaydedilecek ayarlar:", editingSettings);
+      
+      // ID'nin doğru şekilde kullanıldığından emin olalım
+      const dataToSave = {
+        ...editingSettings,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Eğer yeni kayıt oluşturuluyorsa, created_at ekleyelim
+      if (!dataToSave.id) {
+        dataToSave.created_at = new Date().toISOString();
+      }
+      
+      // Tüm gerekli alanların dolu olduğundan emin olalım
+      const requiredFields = [
+        'hero_title', 'hero_subtitle', 'hero_description', 'hero_image_path',
+        'left_title', 'left_description', 'right_image_1', 'right_image_2',
+        'section_title', 'section_subtitle', 'section_description'
+      ];
+      
+      const missingFields = requiredFields.filter(field => !dataToSave[field]);
+      if (missingFields.length > 0) {
+        throw new Error(`Lütfen tüm zorunlu alanları doldurun: ${missingFields.join(', ')}`);
+      }
+
+      // Veriyi kaydet (upsert ile hem güncelleme hem de yeni kayıt yapmayı destekler)
+      const { data, error } = await supabase
         .from('opportunity_settings')
-        .upsert(editingSettings);
+        .upsert(dataToSave, { 
+          onConflict: 'id',
+          returning: 'representation' // Kaydedilen veriyi geri döndür
+        });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error:", error);
+        throw error;
+      }
 
+      console.log("Kaydedilen veri:", data);
+      
+      // State'i güncelle
       await loadData();
       setIsSettingsModalOpen(false);
       alert('Ayarlar başarıyla kaydedildi!');
     } catch (error) {
       console.error('Error saving settings:', error);
-      alert('Ayarlar kaydedilirken bir hata oluştu');
+      alert(`Ayarlar kaydedilirken bir hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
     } finally {
       setIsLoading(false);
     }
@@ -115,24 +151,53 @@ const OpportunityManagement = () => {
     try {
       if (!file) return;
       
-      const fileExt = file.name.split('.').pop();
+      // Dosya boyutu kontrolü (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error('Dosya boyutu çok büyük (maksimum 10MB)');
+      }
+      
+      // Dosya uzantısı kontrolü
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      if (!fileExt || !['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {
+        throw new Error('Geçersiz dosya türü. Sadece jpg, jpeg, png, gif ve webp kabul edilir.');
+      }
+      
       const fileName = `${field}-${Date.now()}.${fileExt}`;
       const filePath = `opportunity/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
+      // Önce dosya varlığını kontrol edelim
+      console.log(`Dosya yükleniyor: ${filePath}`);
+      
+      const { error: uploadError, data } = await supabase.storage
         .from('site-images')
-        .upload(filePath, file);
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true // Aynı adla bir dosya varsa üzerine yaz
+        });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Yükleme hatası:", uploadError);
+        throw uploadError;
+      }
 
-      setEditingSettings(prev => prev ? {
-        ...prev,
-        [field]: filePath
-      } : null);
+      console.log("Dosya başarıyla yüklendi:", data);
+
+      // State'i güncelle
+      setEditingSettings(prev => {
+        if (!prev) return null;
+        
+        const updatedSettings = {
+          ...prev,
+          [field]: filePath
+        };
+        
+        console.log(`${field} alanı güncellendi:`, updatedSettings);
+        return updatedSettings;
+      });
 
     } catch (error) {
       console.error('Error uploading image:', error);
-      alert('Görsel yüklenirken bir hata oluştu');
+      alert(`Görsel yüklenirken bir hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
     }
   };
 
